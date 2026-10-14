@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BrandLogo, SiteFooter } from "./Branding.jsx";
 
 /* ------------------------------------------------------------------
    Light-dependent resistor (LDR) in a potential divider
@@ -799,6 +800,7 @@ export default function App() {
     <main className="page">
       <style>{styles}</style>
       <div className="shell">
+        <BrandLogo className="page-logo" />
         <header className="heading">
           <div className="eyebrow">Electricity • Resistance</div>
           <h1>Light-dependent resistor (LDR)</h1>
@@ -993,6 +995,7 @@ export default function App() {
             )}
           </div>
         </section>
+        <SiteFooter />
       </div>
     </main>
   );
