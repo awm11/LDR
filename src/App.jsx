@@ -55,7 +55,7 @@ const RIGHT = 890;
 const BAT = { long1: 626, short1: 639, long2: 663, short2: 676 };
 const LDR = { x: 530, y: BOT, r: 40, half: 23 }; // half = half the body length
 const RES = { x: 760, w: 100, h: 40 };
-const VM = { x: 530, y: 510, r: 30, left: 472, right: 588 };
+const VM = { x: 530, y: 510, r: 30, left: 462, right: 598 };
 
 // Conventional current leaves the + terminal (the long plate on the left)
 const FLOW_PATHS = [
