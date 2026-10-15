@@ -57,18 +57,21 @@ const BAT = { long1: 626, short1: 639, long2: 663, short2: 676 };
 const LDR = { x: 530, y: BOT, r: 40, half: 23 }; // half = half the body length
 const RES = { x: 760, w: 100, h: 40 };
 const VM = { x: 530, y: 510, r: 30, left: 462, right: 598 };
+const AM = { x: RIGHT, y: (TOP + BOT) / 2, r: 28 }; // ammeter, in the right-hand wire
 
 // Conventional current leaves the + terminal (the long plate on the left)
 const FLOW_PATHS = [
   `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${LDR.x - LDR.half}`,
   `M${LDR.x + LDR.half},${BOT} H${RES.x - RES.w / 2}`,
-  `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${TOP} H${BAT.short2}`,
+  `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${AM.y + AM.r}`,
+  `M${RIGHT},${AM.y - AM.r} V${TOP} H${BAT.short2}`,
 ];
 
 const WIRES = [
   `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${LDR.x - LDR.half}`,
   `M${LDR.x + LDR.half},${BOT} H${RES.x - RES.w / 2}`,
-  `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${TOP} H${BAT.short2}`,
+  `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${AM.y + AM.r}`,
+  `M${RIGHT},${AM.y - AM.r} V${TOP} H${BAT.short2}`,
   `M${BAT.short1},${TOP} H${BAT.long2}`,
   // Voltmeter, in parallel with the LDR
   `M${VM.left},${BOT} V${VM.y} H${VM.x - VM.r}`,
@@ -80,7 +83,7 @@ const HEAD = { x: 125, y: 318 };
 const AIM = (Math.atan2(LDR.y - HEAD.y, LDR.x - HEAD.x) * 180) / Math.PI;
 
 // The visible part of the drawing, with room for the sliders
-const VB = { x: 0, y: 16, w: 910, h: 644 };
+const VB = { x: 0, y: 16, w: 930, h: 644 };
 
 // Each slider sits by the thing it changes: centre x, top y, width
 // (scene units)
@@ -519,18 +522,33 @@ function LdrSymbol({ light }) {
         </g>
       ))}
 
-      <text x={LDR.x} y={LDR.y + 64} fontSize="14" fontWeight="700" fill={C.muted} textAnchor="middle">
-        LDR
-      </text>
     </g>
   );
 }
 
-function CurrentLabel({ current }) {
+// Ammeter in series, with its digital display just inside the circuit
+function Ammeter({ current }) {
   return (
-    <text x={RIGHT - 112} y={TOP + 50} fontSize="17" fill={C.muted} style={{ fontVariantNumeric: "tabular-nums" }}>
-      I = {current.toFixed(2)} A
-    </text>
+    <g>
+      <circle cx={AM.x} cy={AM.y} r={AM.r} fill="#fff" stroke={C.ink} strokeWidth="2.6" />
+      <text x={AM.x} y={AM.y + 1} fontSize="26" fill={C.ink} textAnchor="middle" dominantBaseline="central">
+        A
+      </text>
+      <g transform={`translate(${AM.x - AM.r - 74} ${AM.y})`}>
+        <rect x="-58" y="-20" width="116" height="40" rx="7" fill="#11161d" />
+        <text
+          x="0"
+          y="1"
+          fontSize="22"
+          fontFamily="ui-monospace, Menlo, Consolas, monospace"
+          fill="#ffffff"
+          textAnchor="middle"
+          dominantBaseline="central"
+        >
+          {current.toFixed(2)} A
+        </text>
+      </g>
+    </g>
   );
 }
 
@@ -883,7 +901,7 @@ export default function App() {
               <g clipPath="url(#ldrClip)">
                 <Beam opacity={beamOpacityAt(light)} />
               </g>
-              <CurrentLabel current={current} />
+              <Ammeter current={current} />
 
               {/* Current animation overlay, on top of the wires */}
               {FLOW_PATHS.map((d) => (
@@ -1135,7 +1153,7 @@ const styles = `
   .scene {
     position: relative;
     width: 100%;
-    max-width: 976px;
+    max-width: 998px;
     margin: 0 auto;
     container: scene / inline-size;
   }
