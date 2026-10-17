@@ -55,19 +55,19 @@ const LEFT = 410;
 const RIGHT = 890;
 const BAT = { long1: 626, short1: 639, long2: 663, short2: 676 };
 const LDR = { x: 530, y: BOT, r: 40, half: 23 }; // half = half the body length
-const TH = { x: 530, y: BOT, half: 23 }; // thermistor body
+const TH = { x: 530, y: 360, half: 23 }; // thermistor body, under the water
 const RES = { x: 760, w: 100, h: 40 };
 const AM = { x: RIGHT, y: (TOP + BOT) / 2, r: 28 }; // ammeter, in the right-hand wire
 
 // Voltmeters: across the LDR, and (wider and lower, to clear the hot
 // plate) across the thermistor
 const VM_LDR = { x: 530, y: 510, r: 30, left: 462, right: 598 };
-const VM_TH = { x: 530, y: 540, r: 30, left: 440, right: 620 };
+const VM_TH = { x: 530, y: 510, r: 30, left: 426, right: 634 };
 
 // Beaker of water on a hot plate, around the thermistor. The wires
 // climb over the rim and dip into the water.
-const BEAKER = { x0: 458, x1: 602, rim: 318, base: 452, water: 338 };
-const OVER = 298; // height at which the wires cross the rim
+const BEAKER = { x0: 458, x1: 602, rim: 278, base: 412, water: 298 };
+const OVER = 258; // height at which the wires cross the rim
 const DIP = { left: 478, right: 582 }; // where the wires go down into the water
 
 // Shared parts of the wiring (the right-hand side, through the ammeter)
@@ -91,8 +91,8 @@ const LDR_WIRES = [
 ];
 
 const TH_FLOW = [
-  `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${VM_TH.left} V${OVER} H${DIP.left} V${BOT} H${TH.x - TH.half}`,
-  `M${TH.x + TH.half},${BOT} H${DIP.right} V${OVER} H${VM_TH.right} V${BOT} H${RES.x - RES.w / 2}`,
+  `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${VM_TH.left} V${OVER} H${DIP.left} V${TH.y} H${TH.x - TH.half}`,
+  `M${TH.x + TH.half},${TH.y} H${DIP.right} V${OVER} H${VM_TH.right} V${BOT} H${RES.x - RES.w / 2}`,
   ...WIRE_RIGHT,
 ];
 const TH_WIRES = [
@@ -182,19 +182,24 @@ function Graph({ s: sensor, input, r, collapsed, onToggle }) {
   const box = sensor.graphBox;
   const G = { x0: box.x + 40, y0: box.y + 166, w: box.w - 64, h: 116 };
   const rMax = sensor.R(sensor.min);
+  // Linear for the thermistor (shows its curve); squashed (log) for the
+  // LDR, whose resistance spans too wide a range to fit otherwise
+  const linearScale = sensor.graphScale === "linear";
   const gx = (v) => G.x0 + ((v - sensor.min) / (sensor.max - sensor.min)) * G.w;
-  const gy = (res) => G.y0 - (G.h * Math.log(1 + res)) / Math.log(1 + rMax);
+  const gy = (res) =>
+    linearScale ? G.y0 - (G.h * res) / rMax : G.y0 - (G.h * Math.log(1 + res)) / Math.log(1 + rMax);
 
   const points = useMemo(() => {
     const pts = [];
     for (let i = 0; i <= 200; i++) {
       const v = sensor.min + (i / 200) * (sensor.max - sensor.min);
       const x = G.x0 + (i / 200) * G.w;
-      const y = G.y0 - (G.h * Math.log(1 + sensor.R(v))) / Math.log(1 + rMax);
+      const res = sensor.R(v);
+      const y = linearScale ? G.y0 - (G.h * res) / rMax : G.y0 - (G.h * Math.log(1 + res)) / Math.log(1 + rMax);
       pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
     }
     return pts.join(" ");
-  }, [sensor, G.x0, G.y0, G.w, G.h, rMax]);
+  }, [sensor, linearScale, G.x0, G.y0, G.w, G.h, rMax]);
 
   const px = gx(input);
   const py = gy(r);
@@ -586,42 +591,64 @@ function ThermistorSymbol() {
   );
 }
 
+// Bubble start points along the bottom of the beaker
 const BUBBLES = [
-  { x: 486, y: 440, d: 0 },
-  { x: 528, y: 446, d: 0.5 },
-  { x: 572, y: 442, d: 1.0 },
-  { x: 504, y: 444, d: 1.3 },
-  { x: 552, y: 440, d: 0.8 },
-  { x: 592, y: 446, d: 0.3 },
-  { x: 470, y: 446, d: 1.6 },
-  { x: 540, y: 438, d: 1.9 },
+  { x: 486, d: 0.0 }, { x: 552, d: 1.1 }, { x: 512, d: 0.4 }, { x: 588, d: 1.6 },
+  { x: 470, d: 0.9 }, { x: 534, d: 0.2 }, { x: 574, d: 0.7 }, { x: 500, d: 1.3 },
+  { x: 560, d: 1.9 }, { x: 522, d: 1.5 }, { x: 478, d: 2.1 }, { x: 596, d: 0.5 },
 ];
 
-// Beaker of water on a hot plate. The water warms from blue to orange,
-// the plate glows, ice floats at 0 °C, and it steams and bubbles as it
-// nears boiling.
+// A wavy line across the water surface
+function surfacePath(amp, phase) {
+  const { x0, x1, water } = BEAKER;
+  let d = `M${x0 + 3},${water}`;
+  for (let x = x0 + 3; x <= x1 - 3; x += 4) {
+    const y = water + amp * Math.sin((x - x0) / 9 + phase);
+    d += ` L${x},${y.toFixed(2)}`;
+  }
+  return d;
+}
+
+// Beaker of water on a hot plate. The water stays the same colour; the
+// heat shows as it would in the lab: wisps of steam first, then a few
+// small bubbles, then simmering, then a rolling boil near 100 °C.
 function WaterBath({ temp }) {
   const k = temp / TEMP_MAX;
   const { x0, x1, rim, base, water } = BEAKER;
-  const steam = Math.max(0, Math.min(1, (temp - 55) / 45));
-  const nBubbles = Math.round(Math.max(0, (temp - 70) / 30) * BUBBLES.length);
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const steam = clamp((temp - 30) / 70); // wisps from 30 °C
+  const bubbling = clamp((temp - 45) / 55); // first bubbles from 45 °C
+  const nBubbles = Math.round(bubbling * BUBBLES.length);
+  const rise = -(base - water - 16);
+  const bubbleTime = 3.2 - 2 * bubbling; // faster as it heats
+  const bubbleR = 1.8 + 2 * bubbling;
+  const ripple = 3 * clamp((temp - 75) / 25); // surface moves when simmering
 
   return (
     <g>
       {/* Steam above the water */}
-      <g opacity={0.75 * steam} fill="none" stroke="#9aa5b1" strokeWidth="3" strokeLinecap="round">
-        <path className="steam s1" d={`M508,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
-        <path className="steam s2" d={`M532,${rim - 4} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
-        <path className="steam s3" d={`M556,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
-      </g>
+      {steam > 0 && (
+        <g opacity={0.15 + 0.7 * steam} fill="none" stroke="#9aa5b1" strokeWidth={2 + steam} strokeLinecap="round">
+          <path className="steam s1" d={`M506,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
+          {steam > 0.3 && <path className="steam s2" d={`M532,${rim - 4} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />}
+          {steam > 0.6 && <path className="steam s3" d={`M558,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />}
+        </g>
+      )}
 
       {/* Water */}
       <path
         d={`M${x0 + 3},${water} H${x1 - 3} V${base - 10} q0,8 -8,8 H${x0 + 11} q-8,0 -8,-8 Z`}
-        fill={mix("cfe6fb", "f9bf9f", k)}
+        fill="#d6ebfb"
         opacity="0.9"
       />
-      <line x1={x0 + 3} y1={water} x2={x1 - 3} y2={water} stroke={mix("7fb8e6", "e8865c", k)} strokeWidth="1.6" />
+      {ripple > 0 ? (
+        <g fill="none" stroke="#8fc0e8" strokeWidth="1.6">
+          <path className="ripple r1" d={surfacePath(ripple, 0)} />
+          <path className="ripple r2" d={surfacePath(ripple, Math.PI)} />
+        </g>
+      ) : (
+        <line x1={x0 + 3} y1={water} x2={x1 - 3} y2={water} stroke="#8fc0e8" strokeWidth="1.6" />
+      )}
 
       {/* Ice at freezing point */}
       {temp < 3 && (
@@ -631,18 +658,19 @@ function WaterBath({ temp }) {
         </g>
       )}
 
-      {/* Bubbles near boiling */}
+      {/* Bubbles rising from the bottom */}
       {BUBBLES.slice(0, nBubbles).map((b) => (
         <circle
           key={b.x}
           className="bubble"
           cx={b.x}
-          cy={b.y}
-          r="3.2"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="1.4"
-          style={{ animationDelay: `${b.d}s` }}
+          cy={base - 8}
+          r={bubbleR}
+          fill="#ffffff"
+          fillOpacity="0.75"
+          stroke="#7fb3dc"
+          strokeWidth="1.2"
+          style={{ animationDelay: `${b.d}s`, animationDuration: `${bubbleTime}s`, "--rise": `${rise}px` }}
         />
       ))}
 
@@ -962,10 +990,11 @@ const SENSORS = {
     inputLabel: "Hot plate",
     accent: "#dc2626",
     graphTitle: "THERMISTOR",
+    graphScale: "linear",
     xLabel: "Temperature",
     graphBox: { x: 120, y: 24, w: 276, h: 238 },
     vb: { x: 110, y: 16, w: 820, h: 644 },
-    ctl: { x: 322, y: 452, w: 140 },
+    ctl: { x: 322, y: 412, w: 140 },
     vm: VM_TH,
     wires: TH_WIRES,
     flow: TH_FLOW,
@@ -1506,7 +1535,7 @@ const styles = `
   @keyframes bubbleRise {
     0% { transform: translateY(0); opacity: 0; }
     15% { opacity: .9; }
-    100% { transform: translateY(-96px); opacity: 0; }
+    100% { transform: translateY(var(--rise, -90px)); opacity: 0; }
   }
   .bubble {
     transform-box: fill-box;
@@ -1520,8 +1549,11 @@ const styles = `
   .steam { animation: steamDrift 2.6s ease-in-out infinite; }
   .steam.s2 { animation-delay: .9s; }
   .steam.s3 { animation-delay: 1.7s; }
+  @keyframes rippleA { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .ripple { animation: rippleA .9s ease-in-out infinite; }
+  .ripple.r2 { animation-delay: -.45s; }
   @media (prefers-reduced-motion: reduce) {
-    .bubble, .steam { animation: none; }
+    .bubble, .steam, .ripple { animation: none; }
   }
 
   .gBtn { cursor: pointer; outline: none; }
