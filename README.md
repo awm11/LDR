@@ -25,5 +25,5 @@ npm install
 npm run dev
 ```
 
-`vite.config.js` sets `base: "/LDR/"` for GitHub Pages; change it if the
-repo is named differently.
+The site is served from `/ldr-thermistor/` (the GitHub repo name);
+`REPO_NAME` in `vite.config.js` must match the repo name.
