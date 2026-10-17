@@ -998,7 +998,7 @@ const SENSORS = {
     graphScale: "linear",
     xLabel: "Temperature",
     graphBox: { x: 120, y: 24, w: 276, h: 238 },
-    vb: { x: 110, y: 16, w: 820, h: 644 },
+    vb: { x: 110, y: 16, w: 820, h: 590 }, // shorter: nothing below the voltmeter
     ctl: { x: 322, y: 412, w: 140 },
     vm: VM_TH,
     wires: TH_WIRES,
