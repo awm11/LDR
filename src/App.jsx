@@ -218,10 +218,6 @@ function Graph({ s: sensor, input, r, collapsed, onToggle }) {
       />
       <text x={box.x + 14} y={box.y + 24} fontSize="12.5" fontWeight="800" letterSpacing="1" fill="#3867a8">
         {sensor.graphTitle}
-        <tspan fontWeight="500" letterSpacing="0" fill={C.muted}>
-          {" "}
-          (not to scale)
-        </tspan>
       </text>
 
       {!collapsed && (
@@ -610,19 +606,19 @@ function surfacePath(amp, phase) {
 }
 
 // Beaker of water on a hot plate. The water stays the same colour; the
-// heat shows as it would in the lab: wisps of steam first, then a few
-// small bubbles, then simmering, then a rolling boil near 100 °C.
+// heat shows as it would in the lab: wisps of steam first, then (from
+// 70 °C) a few small bubbles, then simmering, then a rolling boil.
 function WaterBath({ temp }) {
   const k = temp / TEMP_MAX;
   const { x0, x1, rim, base, water } = BEAKER;
   const clamp = (v) => Math.max(0, Math.min(1, v));
   const steam = clamp((temp - 30) / 70); // wisps from 30 °C
-  const bubbling = clamp((temp - 45) / 55); // first bubbles from 45 °C
+  const bubbling = clamp((temp - 70) / 30); // first bubbles from 70 °C
   const nBubbles = Math.round(bubbling * BUBBLES.length);
   const rise = -(base - water - 16);
   const bubbleTime = 3.2 - 2 * bubbling; // faster as it heats
   const bubbleR = 1.8 + 2 * bubbling;
-  const ripple = 3 * clamp((temp - 75) / 25); // surface moves when simmering
+  const ripple = 3 * clamp((temp - 85) / 15); // surface moves when simmering
 
   return (
     <g>
@@ -989,7 +985,7 @@ const SENSORS = {
     initial: 20,
     inputLabel: "Hot plate",
     accent: "#dc2626",
-    graphTitle: "THERMISTOR",
+    graphTitle: "THERMISTOR RESISTANCE",
     graphScale: "linear",
     xLabel: "Temperature",
     graphBox: { x: 120, y: 24, w: 276, h: 238 },
