@@ -216,7 +216,16 @@ function Graph({ s: sensor, input, r, collapsed, onToggle }) {
         stroke="#d9dee4"
         strokeWidth="1.2"
       />
-      <text x={box.x + 14} y={box.y + 24} fontSize="12.5" fontWeight="800" letterSpacing="1" fill="#3867a8">
+      {/* Title, sized so it looks the same on both screens (their drawings
+          are scaled differently: the LDR scene is wider) */}
+      <text
+        x={box.x + 14}
+        y={box.y + 25}
+        fontSize={12.5 * (sensor.vb.w / 820)}
+        fontWeight="800"
+        letterSpacing="1"
+        fill="#3867a8"
+      >
         {sensor.graphTitle}
       </text>
 
