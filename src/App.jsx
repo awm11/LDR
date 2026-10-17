@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BrandLogo, SiteFooter } from "./Branding.jsx";
 
 /* ------------------------------------------------------------------
-   Light-dependent resistor (LDR) in a potential divider
+   Sensors in a potential divider: an LDR and a thermistor
 
-   A lamp shines on an LDR wired in series with a fixed resistor. The
-   battery's voltage is shared between them in proportion to their
-   resistance, and a voltmeter reads the share across the LDR.
+   Two screens share one circuit. A sensor (an LDR lit by a lamp, or a
+   thermistor in a water bath on a hot plate) is wired in series with a
+   fixed resistor. The battery's voltage is shared between them in
+   proportion to their resistance, and a voltmeter reads the sensor's
+   share.
 
    The current animation overlay (red dashes running along the wires)
    is the one used in uses-of-electromagnets: same colour, dash pattern
@@ -33,65 +35,80 @@ const LIGHT_MAX = 10;
 // the dark, under 1 Ω in bright light (values chosen to keep the sums
 // friendly, not to match a real component).
 const ldrResistance = (light) => 14.5 / (light * light + 0.1);
-const R_DARK = ldrResistance(0);
+
+const TEMP_MAX = 100; // °C
+// NTC thermistor: resistance falls as it gets hotter, from 100 Ω at
+// 0 °C to about 1 Ω at 100 °C (again chosen for friendly numbers).
+const thermistorResistance = (t) => 100 * Math.exp(-0.046 * t);
 
 const fmtR = (r) => (r >= 10 ? r.toFixed(1) : r.toFixed(2));
 const fmtV = (v) => v.toFixed(2);
 const fmtNum = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-/* ---------------- Geometry (viewBox 0 0 1000 620) ---------------- */
+/* ---------------- Geometry (scene units) ---------------- */
 
-// Resistance–light-intensity graph, in its own box above the lamp
-const GBOX = { x: 12, y: 24, w: 300, h: 238 };
-const G = { x0: GBOX.x + 40, y0: GBOX.y + 166, w: 236, h: 116 };
-const graphX = (light) => G.x0 + (light / LIGHT_MAX) * G.w;
-// Squashed vertical scale so the whole curve fits ("not to scale")
-const graphY = (r) => G.y0 - (G.h * Math.log(1 + r)) / Math.log(1 + R_DARK);
-
-// Circuit
+// Circuit, shared by both screens. The sensor sits on the bottom wire,
+// on the same stretch as the fixed resistor.
 const TOP = 150;
 const BOT = 400;
 const LEFT = 410;
 const RIGHT = 890;
 const BAT = { long1: 626, short1: 639, long2: 663, short2: 676 };
 const LDR = { x: 530, y: BOT, r: 40, half: 23 }; // half = half the body length
+const TH = { x: 530, y: BOT, half: 23 }; // thermistor body
 const RES = { x: 760, w: 100, h: 40 };
-const VM = { x: 530, y: 510, r: 30, left: 462, right: 598 };
 const AM = { x: RIGHT, y: (TOP + BOT) / 2, r: 28 }; // ammeter, in the right-hand wire
 
-// Conventional current leaves the + terminal (the long plate on the left)
-const FLOW_PATHS = [
-  `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${LDR.x - LDR.half}`,
-  `M${LDR.x + LDR.half},${BOT} H${RES.x - RES.w / 2}`,
+// Voltmeters: across the LDR, and (wider and lower, to clear the hot
+// plate) across the thermistor
+const VM_LDR = { x: 530, y: 510, r: 30, left: 462, right: 598 };
+const VM_TH = { x: 530, y: 540, r: 30, left: 440, right: 620 };
+
+// Beaker of water on a hot plate, around the thermistor. The wires
+// climb over the rim and dip into the water.
+const BEAKER = { x0: 458, x1: 602, rim: 318, base: 452, water: 338 };
+const OVER = 298; // height at which the wires cross the rim
+const DIP = { left: 478, right: 582 }; // where the wires go down into the water
+
+// Shared parts of the wiring (the right-hand side, through the ammeter)
+const WIRE_RIGHT = [
   `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${AM.y + AM.r}`,
   `M${RIGHT},${AM.y - AM.r} V${TOP} H${BAT.short2}`,
 ];
+const BATTERY_GAP = `M${BAT.short1},${TOP} H${BAT.long2}`;
 
-const WIRES = [
+// Conventional current leaves the + terminal (the long plate on the left)
+const LDR_FLOW = [
   `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${LDR.x - LDR.half}`,
   `M${LDR.x + LDR.half},${BOT} H${RES.x - RES.w / 2}`,
-  `M${RES.x + RES.w / 2},${BOT} H${RIGHT} V${AM.y + AM.r}`,
-  `M${RIGHT},${AM.y - AM.r} V${TOP} H${BAT.short2}`,
-  `M${BAT.short1},${TOP} H${BAT.long2}`,
-  // Voltmeter, in parallel with the LDR
-  `M${VM.left},${BOT} V${VM.y} H${VM.x - VM.r}`,
-  `M${VM.x + VM.r},${VM.y} H${VM.right} V${BOT}`,
+  ...WIRE_RIGHT,
+];
+const LDR_WIRES = [
+  ...LDR_FLOW,
+  BATTERY_GAP,
+  `M${VM_LDR.left},${BOT} V${VM_LDR.y} H${VM_LDR.x - VM_LDR.r}`,
+  `M${VM_LDR.x + VM_LDR.r},${VM_LDR.y} H${VM_LDR.right} V${BOT}`,
+];
+
+const TH_FLOW = [
+  `M${BAT.long1},${TOP} H${LEFT} V${BOT} H${VM_TH.left} V${OVER} H${DIP.left} V${BOT} H${TH.x - TH.half}`,
+  `M${TH.x + TH.half},${BOT} H${DIP.right} V${OVER} H${VM_TH.right} V${BOT} H${RES.x - RES.w / 2}`,
+  ...WIRE_RIGHT,
+];
+const TH_WIRES = [
+  ...TH_FLOW,
+  BATTERY_GAP,
+  `M${VM_TH.left},${BOT} V${VM_TH.y} H${VM_TH.x - VM_TH.r}`,
+  `M${VM_TH.x + VM_TH.r},${VM_TH.y} H${VM_TH.right} V${BOT}`,
 ];
 
 // Lamp head: pivot and the angle it points at the LDR
 const HEAD = { x: 125, y: 318 };
 const AIM = (Math.atan2(LDR.y - HEAD.y, LDR.x - HEAD.x) * 180) / Math.PI;
 
-// The visible part of the drawing, with room for the sliders
-const VB = { x: 0, y: 16, w: 930, h: 644 };
-
-// Each slider sits by the thing it changes: centre x, top y, width
-// (scene units)
-const CTL = {
-  light: { x: 105, y: 600, w: 150 },
-  battery: { x: (BAT.long1 + BAT.short2) / 2, y: 50, w: 110 },
-  fixed: { x: RES.x, y: 432, w: 110 },
-};
+// Shared slider positions: centre x, top y, width
+const CTL_BATTERY = { x: (BAT.long1 + BAT.short2) / 2, y: 50, w: 110 };
+const CTL_FIXED = { x: RES.x, y: 432, w: 110 };
 
 /* ------------------------------------------------------------------
    Current animation overlay
@@ -159,33 +176,43 @@ function FlowOverlay({ d }) {
 
 /* ---------------- Drawing pieces ---------------- */
 
-function Graph({ light, rLdr, collapsed, onToggle }) {
+// Graph of the sensor's resistance against its input, in its own box.
+// The vertical scale is squashed (log) so the whole curve fits.
+function Graph({ s: sensor, input, r, collapsed, onToggle }) {
+  const box = sensor.graphBox;
+  const G = { x0: box.x + 40, y0: box.y + 166, w: box.w - 64, h: 116 };
+  const rMax = sensor.R(sensor.min);
+  const gx = (v) => G.x0 + ((v - sensor.min) / (sensor.max - sensor.min)) * G.w;
+  const gy = (res) => G.y0 - (G.h * Math.log(1 + res)) / Math.log(1 + rMax);
+
   const points = useMemo(() => {
     const pts = [];
     for (let i = 0; i <= 200; i++) {
-      const l = (i / 200) * LIGHT_MAX;
-      pts.push(`${graphX(l).toFixed(1)},${graphY(ldrResistance(l)).toFixed(1)}`);
+      const v = sensor.min + (i / 200) * (sensor.max - sensor.min);
+      const x = G.x0 + (i / 200) * G.w;
+      const y = G.y0 - (G.h * Math.log(1 + sensor.R(v))) / Math.log(1 + rMax);
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
     }
     return pts.join(" ");
-  }, []);
+  }, [sensor, G.x0, G.y0, G.w, G.h, rMax]);
 
-  const px = graphX(light);
-  const py = graphY(rLdr);
+  const px = gx(input);
+  const py = gy(r);
 
   return (
     <g>
       <rect
-        x={GBOX.x}
-        y={GBOX.y}
-        width={GBOX.w}
-        height={collapsed ? 40 : GBOX.h}
+        x={box.x}
+        y={box.y}
+        width={box.w}
+        height={collapsed ? 40 : box.h}
         rx="12"
         fill="#fafbfc"
         stroke="#d9dee4"
         strokeWidth="1.2"
       />
-      <text x={GBOX.x + 14} y={GBOX.y + 24} fontSize="12.5" fontWeight="800" letterSpacing="1" fill="#3867a8">
-        LDR RESISTANCE
+      <text x={box.x + 14} y={box.y + 24} fontSize="12.5" fontWeight="800" letterSpacing="1" fill="#3867a8">
+        {sensor.graphTitle}
         <tspan fontWeight="500" letterSpacing="0" fill={C.muted}>
           {" "}
           (not to scale)
@@ -213,24 +240,24 @@ function Graph({ light, rLdr, collapsed, onToggle }) {
             Resistance
           </text>
           <text x={G.x0 + G.w / 2} y={G.y0 + 20} fontSize="13" fill={C.ink} textAnchor="middle">
-            Light intensity
+            {sensor.xLabel}
           </text>
 
           {/* Reading for the point on the curve */}
-          <line x1={GBOX.x + 14} y1={GBOX.y + GBOX.h - 30} x2={GBOX.x + GBOX.w - 14} y2={GBOX.y + GBOX.h - 30} stroke="#e5e8ec" />
-          <text x={GBOX.x + 14} y={GBOX.y + GBOX.h - 10} fontSize="16" fill={C.blue}>
-            R<tspan fontSize="11" dy="4">LDR</tspan>
+          <line x1={box.x + 14} y1={box.y + box.h - 30} x2={box.x + box.w - 14} y2={box.y + box.h - 30} stroke="#e5e8ec" />
+          <text x={box.x + 14} y={box.y + box.h - 10} fontSize="16" fill={C.blue}>
+            R<tspan fontSize="11" dy="4">{sensor.sub}</tspan>
           </text>
           <text
-            x={GBOX.x + GBOX.w - 14}
-            y={GBOX.y + GBOX.h - 10}
+            x={box.x + box.w - 14}
+            y={box.y + box.h - 10}
             fontSize="16"
             fontWeight="700"
             fill={C.blue}
             textAnchor="end"
             style={{ fontVariantNumeric: "tabular-nums" }}
           >
-            {fmtR(rLdr)} Ω
+            {fmtR(r)} Ω
           </text>
         </>
       )}
@@ -250,12 +277,12 @@ function Graph({ light, rLdr, collapsed, onToggle }) {
           }
         }}
       >
-        <rect x={GBOX.x + GBOX.w - 36} y={GBOX.y + 8} width="26" height="24" rx="6" fill="#fff" stroke="#d9dee4" strokeWidth="1.2" />
+        <rect x={box.x + box.w - 36} y={box.y + 8} width="26" height="24" rx="6" fill="#fff" stroke="#d9dee4" strokeWidth="1.2" />
         <path
           d={
             collapsed
-              ? `M${GBOX.x + GBOX.w - 29},${GBOX.y + 20} h12 M${GBOX.x + GBOX.w - 23},${GBOX.y + 14} v12`
-              : `M${GBOX.x + GBOX.w - 29},${GBOX.y + 20} h12`
+              ? `M${box.x + box.w - 29},${box.y + 20} h12 M${box.x + box.w - 23},${box.y + 14} v12`
+              : `M${box.x + box.w - 29},${box.y + 20} h12`
           }
           stroke={C.ink}
           strokeWidth="2"
@@ -526,6 +553,142 @@ function LdrSymbol({ light }) {
   );
 }
 
+/* ---------------- Thermistor and water bath ---------------- */
+
+const mix = (a, b, t) => {
+  const pa = a.match(/\w\w/g).map((h) => parseInt(h, 16));
+  const pb = b.match(/\w\w/g).map((h) => parseInt(h, 16));
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",")})`;
+};
+
+// Thermistor symbol: a resistor with a "hockey stick" line through it
+function ThermistorSymbol() {
+  return (
+    <g>
+      <rect
+        x={TH.x - TH.half}
+        y={TH.y - 9}
+        width={TH.half * 2}
+        height="18"
+        fill="#fff"
+        stroke={C.ink}
+        strokeWidth="2.6"
+      />
+      <path
+        d={`M${TH.x - TH.half - 12},${TH.y + 20} H${TH.x - TH.half - 2} L${TH.x + TH.half + 4},${TH.y - 20}`}
+        fill="none"
+        stroke={C.ink}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  );
+}
+
+const BUBBLES = [
+  { x: 486, y: 440, d: 0 },
+  { x: 528, y: 446, d: 0.5 },
+  { x: 572, y: 442, d: 1.0 },
+  { x: 504, y: 444, d: 1.3 },
+  { x: 552, y: 440, d: 0.8 },
+  { x: 592, y: 446, d: 0.3 },
+  { x: 470, y: 446, d: 1.6 },
+  { x: 540, y: 438, d: 1.9 },
+];
+
+// Beaker of water on a hot plate. The water warms from blue to orange,
+// the plate glows, ice floats at 0 °C, and it steams and bubbles as it
+// nears boiling.
+function WaterBath({ temp }) {
+  const k = temp / TEMP_MAX;
+  const { x0, x1, rim, base, water } = BEAKER;
+  const steam = Math.max(0, Math.min(1, (temp - 55) / 45));
+  const nBubbles = Math.round(Math.max(0, (temp - 70) / 30) * BUBBLES.length);
+
+  return (
+    <g>
+      {/* Steam above the water */}
+      <g opacity={0.75 * steam} fill="none" stroke="#9aa5b1" strokeWidth="3" strokeLinecap="round">
+        <path className="steam s1" d={`M508,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
+        <path className="steam s2" d={`M532,${rim - 4} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
+        <path className="steam s3" d={`M556,${rim - 6} c-10,-14 10,-22 0,-38 c-8,-12 6,-18 2,-28`} />
+      </g>
+
+      {/* Water */}
+      <path
+        d={`M${x0 + 3},${water} H${x1 - 3} V${base - 10} q0,8 -8,8 H${x0 + 11} q-8,0 -8,-8 Z`}
+        fill={mix("cfe6fb", "f9bf9f", k)}
+        opacity="0.9"
+      />
+      <line x1={x0 + 3} y1={water} x2={x1 - 3} y2={water} stroke={mix("7fb8e6", "e8865c", k)} strokeWidth="1.6" />
+
+      {/* Ice at freezing point */}
+      {temp < 3 && (
+        <g fill="#f4fbff" stroke="#a8cbe6" strokeWidth="1.4" opacity={1 - temp / 3}>
+          <rect x="492" y={water - 4} width="18" height="15" rx="3" transform={`rotate(-12 501 ${water + 3})`} />
+          <rect x="556" y={water - 3} width="16" height="14" rx="3" transform={`rotate(9 564 ${water + 4})`} />
+        </g>
+      )}
+
+      {/* Bubbles near boiling */}
+      {BUBBLES.slice(0, nBubbles).map((b) => (
+        <circle
+          key={b.x}
+          className="bubble"
+          cx={b.x}
+          cy={b.y}
+          r="3.2"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.4"
+          style={{ animationDelay: `${b.d}s` }}
+        />
+      ))}
+
+      {/* Glass, open at the top, with a lip */}
+      <path
+        d={`M${x0 - 6},${rim} H${x0} V${base - 10} q0,10 10,10 H${x1 - 10} q10,0 10,-10 V${rim} H${x1 + 6}`}
+        fill="none"
+        stroke="#7c8a99"
+        strokeWidth="2.4"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <line x1={x0 + 6} y1={rim + 14} x2={x0 + 6} y2={base - 16} stroke="#fff" strokeWidth="3" opacity="0.7" strokeLinecap="round" />
+
+      {/* Hot plate */}
+      <rect x={x0 - 6} y={base} width={x1 - x0 + 12} height="7" rx="2" fill={mix("9aa3ad", "ef4444", k)} />
+      {k > 0.05 && (
+        <rect x={x0 - 6} y={base - 3} width={x1 - x0 + 12} height="4" rx="2" fill="#f97316" opacity={0.5 * k} />
+      )}
+      <rect x={x0 - 10} y={base + 7} width={x1 - x0 + 20} height="30" rx="4" fill="#4b5563" />
+      <circle cx={x0 + 14} cy={base + 22} r="8" fill="#d1d5db" stroke="#1f2937" strokeWidth="1.2" />
+      <line
+        x1={x0 + 14}
+        y1={base + 22}
+        x2={x0 + 14 + 6 * Math.cos(Math.PI * (0.75 + 1.5 * k))}
+        y2={base + 22 + 6 * Math.sin(Math.PI * (0.75 + 1.5 * k))}
+        stroke="#1f2937"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <rect x={x1 - 62} y={base + 12} width="60" height="20" rx="4" fill="#11161d" />
+      <text
+        x={x1 - 32}
+        y={base + 23}
+        fontSize="13"
+        fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        fill="#ffffff"
+        textAnchor="middle"
+        dominantBaseline="central"
+      >
+        {Math.round(temp)} °C
+      </text>
+    </g>
+  );
+}
+
 // Ammeter in series, with its digital display just inside the circuit
 function Ammeter({ current }) {
   return (
@@ -571,7 +734,7 @@ function FixedResistor({ ohms }) {
   );
 }
 
-function Voltmeter({ reading }) {
+function Voltmeter({ vm: VM, reading }) {
   return (
     <g>
       <circle cx={VM.left} cy={BOT} r="4.5" fill={C.ink} />
@@ -600,7 +763,7 @@ function Voltmeter({ reading }) {
 
 /* ---------------- Theory panel ---------------- */
 
-function Theory({ onClose, returnFocusRef, volts, vLdr }) {
+function Theory({ s: sensor, onClose, returnFocusRef, volts, vSensor }) {
   const closeRef = useRef(null);
 
   // Focus the close button on open; give focus back to the theory
@@ -642,15 +805,7 @@ function Theory({ onClose, returnFocusRef, volts, vLdr }) {
         </header>
 
         <div className="theoryBody">
-          <section>
-            <h3>Light-dependent resistor (LDR)</h3>
-            <p>
-              The resistance of a LDR depends on light intensity. At low light levels, the LDR has a
-              high resistance. As the light intensity increases, the resistance decreases. A LDR can
-              be used as a sensor in cameras or automatic lights that come on when it gets dark.{" "}
-              <span className="cite">[BBC Bitesize]</span>
-            </p>
-          </section>
+          {sensor.theory}
 
           <section>
             <h3>Voltage in series circuits</h3>
@@ -663,20 +818,20 @@ function Theory({ onClose, returnFocusRef, volts, vLdr }) {
               <div>
                 <i>V</i>
                 <sub>battery</sub> = <i>V</i>
-                <sub>LDR</sub> + <i>V</i>
+                <sub>{sensor.sub}</sub> + <i>V</i>
                 <sub>fixed resistor</sub>
               </div>
               <div className="theoryNow">
                 <span className="nowLabel">Right now</span>
                 <span>
-                  <Num w={4}>{fmtNum(volts)}</Num> V = <Num w={5}>{fmtV(vLdr)}</Num> V +{" "}
-                  <Num w={5}>{fmtV(volts - vLdr)}</Num> V
+                  <Num w={4}>{fmtNum(volts)}</Num> V = <Num w={5}>{fmtV(vSensor)}</Num> V +{" "}
+                  <Num w={5}>{fmtV(volts - vSensor)}</Num> V
                 </span>
               </div>
             </div>
             <p>
-              A larger LDR resistance will mean a larger proportion of the battery’s voltage is
-              dropped across the LDR.
+              A larger {sensor.name} resistance will mean a larger proportion of the battery’s
+              voltage is dropped across the {sensor.name}.
             </p>
           </section>
         </div>
@@ -722,7 +877,7 @@ function Slider({ id, label, value, min, max, step, onChange, display, accent })
 }
 
 // Places a control in the scene, next to the part it changes
-function SceneCtl({ at, children }) {
+function SceneCtl({ vb: VB, at, children }) {
   const style = {
     left: `${((at.x - VB.x) / VB.w) * 100}%`,
     top: `${((at.y - VB.y) / VB.h) * 100}%`,
@@ -735,10 +890,114 @@ function SceneCtl({ at, children }) {
   );
 }
 
-/* ---------------- App ---------------- */
+/* ---------------- The two screens ---------------- */
 
-export default function App() {
-  const [light, setLight] = useState(3.88);
+const SENSORS = {
+  ldr: {
+    id: "ldr",
+    tab: "LDR",
+    title: "Light-dependent resistor (LDR)",
+    intro:
+      "Change the light level and watch the LDR’s resistance, the current and the voltmeter reading respond. The battery’s voltage is shared between the LDR and the fixed resistor.",
+    name: "LDR",
+    sub: "LDR",
+    R: ldrResistance,
+    min: 0,
+    max: LIGHT_MAX,
+    step: 0.01,
+    initial: 3.88,
+    inputLabel: "Light level",
+    accent: C.amber,
+    graphTitle: "LDR RESISTANCE",
+    xLabel: "Light intensity",
+    graphBox: { x: 12, y: 24, w: 300, h: 238 },
+    vb: { x: 0, y: 16, w: 930, h: 644 },
+    ctl: { x: 105, y: 600, w: 150 },
+    vm: VM_LDR,
+    wires: LDR_WIRES,
+    flow: LDR_FLOW,
+    describe: "Lamp shining on an LDR",
+    Back: ({ v }) => <Lamp light={v} />,
+    Symbol: ({ v }) => <LdrSymbol light={v} />,
+    // The lamp's light falls across the LDR and the voltmeter
+    Front: ({ v }) => (
+      <>
+        <defs>
+          <clipPath id="ldrClip">
+            <circle cx={LDR.x} cy={LDR.y} r={LDR.r + 1.5} />
+            <circle cx={VM_LDR.x} cy={VM_LDR.y} r={VM_LDR.r + 1.5} />
+          </clipPath>
+        </defs>
+        <g clipPath="url(#ldrClip)">
+          <Beam opacity={beamOpacityAt(v)} />
+        </g>
+      </>
+    ),
+    theory: (
+      <section>
+        <h3>Light-dependent resistor (LDR)</h3>
+        <p>
+          The resistance of a LDR depends on light intensity. At low light levels, the LDR has a
+          high resistance. As the light intensity increases, the resistance decreases. A LDR can be
+          used as a sensor in cameras or automatic lights that come on when it gets dark.{" "}
+          <span className="cite">[BBC Bitesize]</span>
+        </p>
+      </section>
+    ),
+  },
+
+  thermistor: {
+    id: "thermistor",
+    tab: "Thermistor",
+    title: "Thermistor",
+    intro:
+      "Turn up the hot plate to heat the water around the thermistor, and watch its resistance, the current and the voltmeter reading respond. The battery’s voltage is shared between the thermistor and the fixed resistor.",
+    name: "thermistor",
+    sub: "thermistor",
+    R: thermistorResistance,
+    min: 0,
+    max: TEMP_MAX,
+    step: 1,
+    initial: 20,
+    inputLabel: "Hot plate",
+    accent: "#dc2626",
+    graphTitle: "THERMISTOR",
+    xLabel: "Temperature",
+    graphBox: { x: 120, y: 24, w: 276, h: 238 },
+    vb: { x: 110, y: 16, w: 820, h: 644 },
+    ctl: { x: 322, y: 452, w: 140 },
+    vm: VM_TH,
+    wires: TH_WIRES,
+    flow: TH_FLOW,
+    describe: "Thermistor in a beaker of water on a hot plate",
+    Back: ({ v }) => <WaterBath temp={v} />,
+    Symbol: () => <ThermistorSymbol />,
+    Front: () => null,
+    theory: (
+      <section>
+        <h3>Thermistor</h3>
+        <p>
+          The resistance of a thermistor depends on its temperature. When it is cold, the thermistor
+          has a high resistance. As its temperature increases, its resistance decreases. A
+          thermistor can be used as a temperature sensor, for example in a thermostat that switches
+          a heater on when a room gets cold.
+        </p>
+      </section>
+    ),
+  },
+};
+
+function screenFromHash() {
+  if (typeof window === "undefined") return "ldr";
+  const slug = window.location.hash.replace(/^#\/?/, "").toLowerCase();
+  return SENSORS[slug] ? slug : "ldr";
+}
+
+/* ---------------- One screen: sensor, circuit and readings ---------------- */
+
+function Simulation({ s: sensor }) {
+  const VB = sensor.vb;
+  const [input, setInput] = useState(sensor.initial);
   const [volts, setVolts] = useState(12);
   const [rFixed, setRFixed] = useState(5);
   const [theoryOpen, setTheoryOpen] = useState(false);
@@ -755,21 +1014,22 @@ export default function App() {
     theoryRef.current = theoryOpen;
   }, [theoryOpen]);
 
-  const rLdr = ldrResistance(light);
-  const rTotal = rLdr + rFixed;
+  const rSensor = sensor.R(input);
+  const rTotal = rSensor + rFixed;
   const current = volts / rTotal;
-  const vLdr = volts * (rLdr / rTotal);
+  const vSensor = volts * (rSensor / rTotal);
 
   // The dashes show the size of the current by their speed: a crawl at
   // tiny currents, levelling off at high currents so they never blur.
   const flowSpeed = (140 * current) / (current + 1.5);
   // They stay fully visible, and only fade once the circuit's total
-  // resistance gets very high (from 80 Ω up to the ~175 Ω maximum).
-  const R_TOTAL_MAX = R_DARK + 30;
+  // resistance gets very high (from 80 Ω up to the maximum possible).
+  const R_TOTAL_MAX = sensor.R(sensor.min) + 30;
   const fadeT = Math.min(1, Math.max(0, (rTotal - 80) / (R_TOTAL_MAX - 80)));
   const flowOpacity = 1 - 0.65 * fadeT;
   useFlowOffset(svgRef, flowSpeed, reduceMotion);
 
+  const { Back, Symbol, Front } = sensor;
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduceMotion(mq.matches);
@@ -815,204 +1075,236 @@ export default function App() {
   };
 
   return (
+    <section ref={cardRef} className={`card${maximised ? " max" : ""}`}>
+      <div className="topButtons">
+        <button
+          ref={theoryBtnRef}
+          className="theoryBtn"
+          onClick={() => setTheoryOpen(true)}
+          aria-haspopup="dialog"
+        >
+          Click here for theory
+        </button>
+        <button
+          className="maxBtn"
+          onClick={toggleMaximise}
+          aria-label={maximised ? "Exit full screen" : "Full screen"}
+          title={maximised ? "Exit full screen (Esc)" : "Full screen"}
+        >
+          {maximised ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      <div className="stage">
+        <div className="sceneBox">
+        <div className="scene" style={{ "--vb-ratio": VB.w / VB.h }}>
+        <svg
+          ref={svgRef}
+          viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`}
+          role="img"
+          aria-label={`${sensor.describe}, in series with a ${fmtNum(rFixed)} ohm resistor and a ${fmtNum(volts)} volt battery. The ${sensor.name} has a resistance of ${fmtR(rSensor)} ohms, the ammeter reads ${current.toFixed(2)} amps and the voltmeter reads ${fmtV(vSensor)} volts.`}
+          style={{ "--flow-opacity": flowOpacity }}
+        >
+          <defs>
+            <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor={C.beam} stopOpacity="1" />
+              <stop offset="1" stopColor={C.beam} stopOpacity="0.55" />
+            </linearGradient>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill={C.ink} />
+            </marker>
+          </defs>
+
+          <Graph
+            s={sensor}
+            input={input}
+            r={rSensor}
+            collapsed={graphCollapsed}
+            onToggle={() => setGraphCollapsed((v) => !v)}
+          />
+          <Back v={input} />
+
+          {sensor.wires.map((d) => (
+            <Wire key={d} d={d} />
+          ))}
+          <Battery />
+          <Symbol v={input} />
+          <FixedResistor ohms={rFixed} />
+          <Voltmeter vm={sensor.vm} reading={vSensor} />
+          <Front v={input} />
+          <Ammeter current={current} />
+
+          {/* Current animation overlay, on top of the wires */}
+          {sensor.flow.map((d) => (
+            <FlowOverlay key={d} d={d} />
+          ))}
+        </svg>
+
+        <div className="sceneCtls">
+          <SceneCtl vb={VB} at={sensor.ctl}>
+            <Slider
+              id={sensor.id}
+              label={sensor.inputLabel}
+              display={null}
+              value={input}
+              min={sensor.min}
+              max={sensor.max}
+              step={sensor.step}
+              onChange={setInput}
+              accent={sensor.accent}
+            />
+          </SceneCtl>
+          <SceneCtl vb={VB} at={CTL_BATTERY}>
+            <Slider
+              id="battery"
+              label="Battery"
+              display={`${fmtNum(volts)} V`}
+              value={volts}
+              min={1}
+              max={12}
+              step={0.5}
+              onChange={setVolts}
+              accent="#3867a8"
+            />
+          </SceneCtl>
+          <SceneCtl vb={VB} at={CTL_FIXED}>
+            <Slider
+              id="fixed"
+              label="Fixed resistor"
+              display={`${fmtNum(rFixed)} Ω`}
+              value={rFixed}
+              min={1}
+              max={30}
+              step={1}
+              onChange={setRFixed}
+              accent={C.green}
+            />
+          </SceneCtl>
+        </div>
+        </div>
+        </div>
+
+
+        {theoryOpen && (
+          <Theory
+            s={sensor}
+            onClose={() => setTheoryOpen(false)}
+            returnFocusRef={theoryBtnRef}
+            volts={volts}
+            vSensor={vSensor}
+          />
+        )}
+      </div>
+
+      <div className={`equation${eqCollapsed ? " collapsed" : ""}`} aria-live="polite">
+        <button
+          className="miniBtn"
+          onClick={() => setEqCollapsed((v) => !v)}
+          aria-expanded={!eqCollapsed}
+          aria-label={eqCollapsed ? "Show the equation" : "Minimise the equation"}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d={eqCollapsed ? "M1 6h10M6 1v10" : "M1 6h10"} />
+          </svg>
+        </button>
+        {eqCollapsed ? (
+          <div className="eqTitle">Voltage across the {sensor.name} - calculations</div>
+        ) : (
+          <div className="eqRow">
+            <span>
+              V<sub>{sensor.sub}</sub> = V<sub>battery</sub> ×
+            </span>
+            <span className="frac">
+              <span>
+                R<sub>{sensor.sub}</sub>
+              </span>
+              <span>
+                R<sub>{sensor.sub}</sub> + R<sub>fixed</sub>
+              </span>
+            </span>
+            <span>
+              = <Num w={4}>{fmtNum(volts)}</Num> ×
+            </span>
+            <span className="frac">
+              <span>
+                <Num w={5} align="center">
+                  {fmtR(rSensor)}
+                </Num>
+              </span>
+              <span>
+                <Num w={5}>{fmtR(rSensor)}</Num> + <Num w={2} align="left">{fmtNum(rFixed)}</Num>
+              </span>
+            </span>
+            <span>
+              ={" "}
+              <strong>
+                <Num w={5}>{fmtV(vSensor)}</Num> V
+              </strong>
+            </span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- App: page, tabs and the current screen ---------------- */
+
+export default function App() {
+  const [screen, setScreen] = useState(screenFromHash);
+  const sensor = SENSORS[screen];
+
+  // The URL is the source of truth, so a link can open either screen
+  useEffect(() => {
+    const sync = () => setScreen(screenFromHash());
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+
+  useEffect(() => {
+    document.title = sensor.title;
+  }, [sensor]);
+
+  const choose = (id) => {
+    if (id === screen) return;
+    window.location.hash = id;
+    setScreen(id);
+  };
+
+  return (
     <main className="page">
       <style>{styles}</style>
       <div className="shell">
         <BrandLogo className="page-logo" />
         <header className="heading">
           <div className="eyebrow">Electricity • Resistance</div>
-          <h1>Light-dependent resistor (LDR)</h1>
-          <p className="intro">
-            Change the light level and watch the LDR’s resistance, the current and the voltmeter
-            reading respond. The battery’s voltage is shared between the LDR and the fixed resistor.
-          </p>
+          <h1>{sensor.title}</h1>
+          <p className="intro">{sensor.intro}</p>
         </header>
 
-        <section ref={cardRef} className={`card${maximised ? " max" : ""}`}>
-          <div className="topButtons">
+        <div className="tabs" role="tablist" aria-label="Sensor">
+          {Object.values(SENSORS).map((t) => (
             <button
-              ref={theoryBtnRef}
-              className="theoryBtn"
-              onClick={() => setTheoryOpen(true)}
-              aria-haspopup="dialog"
+              key={t.id}
+              role="tab"
+              aria-selected={t.id === screen}
+              className={`tab${t.id === screen ? " on" : ""}`}
+              onClick={() => choose(t.id)}
             >
-              Click here for theory
+              {t.tab}
             </button>
-            <button
-              className="maxBtn"
-              onClick={toggleMaximise}
-              aria-label={maximised ? "Exit full screen" : "Full screen"}
-              title={maximised ? "Exit full screen (Esc)" : "Full screen"}
-            >
-              {maximised ? (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />
-                </svg>
-              )}
-            </button>
-          </div>
+          ))}
+        </div>
 
-          <div className="stage">
-            <div className="sceneBox">
-            <div className="scene">
-            <svg
-              ref={svgRef}
-              viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`}
-              role="img"
-              aria-label={`Lamp shining on an LDR in series with a ${fmtNum(rFixed)} ohm resistor and a ${fmtNum(volts)} volt battery. The LDR has a resistance of ${fmtR(rLdr)} ohms and the voltmeter reads ${fmtV(vLdr)} volts.`}
-              style={{ "--flow-opacity": flowOpacity }}
-            >
-              <defs>
-                <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0" stopColor={C.beam} stopOpacity="1" />
-                  <stop offset="1" stopColor={C.beam} stopOpacity="0.55" />
-                </linearGradient>
-                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0,0 L10,5 L0,10 z" fill={C.ink} />
-                </marker>
-              </defs>
-
-              <Graph
-                light={light}
-                rLdr={rLdr}
-                collapsed={graphCollapsed}
-                onToggle={() => setGraphCollapsed((v) => !v)}
-              />
-              <Lamp light={light} />
-
-              {WIRES.map((d) => (
-                <Wire key={d} d={d} />
-              ))}
-              <Battery />
-              <LdrSymbol light={light} />
-              <FixedResistor ohms={rFixed} />
-              <Voltmeter reading={vLdr} />
-              {/* The lamp's light falls across the LDR and the voltmeter */}
-              <defs>
-                <clipPath id="ldrClip">
-                  <circle cx={LDR.x} cy={LDR.y} r={LDR.r + 1.5} />
-                  <circle cx={VM.x} cy={VM.y} r={VM.r + 1.5} />
-                </clipPath>
-              </defs>
-              <g clipPath="url(#ldrClip)">
-                <Beam opacity={beamOpacityAt(light)} />
-              </g>
-              <Ammeter current={current} />
-
-              {/* Current animation overlay, on top of the wires */}
-              {FLOW_PATHS.map((d) => (
-                <FlowOverlay key={d} d={d} />
-              ))}
-            </svg>
-
-            <div className="sceneCtls">
-              <SceneCtl at={CTL.light}>
-                <Slider
-                  id="light"
-                  label="Light level"
-                  display={null}
-                  value={light}
-                  min={0}
-                  max={LIGHT_MAX}
-                  step={0.01}
-                  onChange={setLight}
-                  accent={C.amber}
-                />
-              </SceneCtl>
-              <SceneCtl at={CTL.battery}>
-                <Slider
-                  id="battery"
-                  label="Battery"
-                  display={`${fmtNum(volts)} V`}
-                  value={volts}
-                  min={1}
-                  max={12}
-                  step={0.5}
-                  onChange={setVolts}
-                  accent="#3867a8"
-                />
-              </SceneCtl>
-              <SceneCtl at={CTL.fixed}>
-                <Slider
-                  id="fixed"
-                  label="Fixed resistor"
-                  display={`${fmtNum(rFixed)} Ω`}
-                  value={rFixed}
-                  min={1}
-                  max={30}
-                  step={1}
-                  onChange={setRFixed}
-                  accent={C.green}
-                />
-              </SceneCtl>
-            </div>
-            </div>
-            </div>
-
-
-            {theoryOpen && (
-              <Theory
-                onClose={() => setTheoryOpen(false)}
-                returnFocusRef={theoryBtnRef}
-                volts={volts}
-                vLdr={vLdr}
-              />
-            )}
-          </div>
-
-          <div className={`equation${eqCollapsed ? " collapsed" : ""}`} aria-live="polite">
-            <button
-              className="miniBtn"
-              onClick={() => setEqCollapsed((v) => !v)}
-              aria-expanded={!eqCollapsed}
-              aria-label={eqCollapsed ? "Show the equation" : "Minimise the equation"}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d={eqCollapsed ? "M1 6h10M6 1v10" : "M1 6h10"} />
-              </svg>
-            </button>
-            {eqCollapsed ? (
-              <div className="eqTitle">Voltage across the LDR - calculations</div>
-            ) : (
-              <div className="eqRow">
-                <span>
-                  V<sub>LDR</sub> = V<sub>battery</sub> ×
-                </span>
-                <span className="frac">
-                  <span>
-                    R<sub>LDR</sub>
-                  </span>
-                  <span>
-                    R<sub>LDR</sub> + R<sub>fixed</sub>
-                  </span>
-                </span>
-                <span>
-                  = <Num w={4}>{fmtNum(volts)}</Num> ×
-                </span>
-                <span className="frac">
-                  <span>
-                    <Num w={5} align="center">
-                      {fmtR(rLdr)}
-                    </Num>
-                  </span>
-                  <span>
-                    <Num w={5}>{fmtR(rLdr)}</Num> + <Num w={2} align="left">{fmtNum(rFixed)}</Num>
-                  </span>
-                </span>
-                <span>
-                  ={" "}
-                  <strong>
-                    <Num w={5}>{fmtV(vLdr)}</Num> V
-                  </strong>
-                </span>
-              </div>
-            )}
-          </div>
-        </section>
+        <Simulation key={sensor.id} s={sensor} />
         <SiteFooter />
       </div>
     </main>
@@ -1137,7 +1429,7 @@ const styles = `
     justify-content: center;
   }
   .card.max .scene {
-    width: min(100cqw, calc(100cqh * ${VB.w} / ${VB.h}));
+    width: min(100cqw, calc(100cqh * var(--vb-ratio)));
     max-width: none;
   }
 
@@ -1187,6 +1479,51 @@ const styles = `
   /* The uses-of-electromagnets current overlay: 5 on, 7 off, red.
      The offset is advanced from JavaScript so the speed can follow
      the current. */
+  /* Screen tabs, just above the card */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 10px 4px;
+  }
+  .tab {
+    border: 1px solid #d9dee4;
+    border-radius: 999px;
+    background: #fff;
+    color: ${C.ink};
+    font-size: 15px;
+    font-weight: 600;
+    padding: 7px 18px;
+    cursor: pointer;
+  }
+  .tab:hover { background: #eef1f5; }
+  .tab.on {
+    background: #3867a8;
+    border-color: #3867a8;
+    color: #fff;
+  }
+
+  /* Water bath: bubbles rise, steam drifts */
+  @keyframes bubbleRise {
+    0% { transform: translateY(0); opacity: 0; }
+    15% { opacity: .9; }
+    100% { transform: translateY(-96px); opacity: 0; }
+  }
+  .bubble {
+    transform-box: fill-box;
+    animation: bubbleRise 1.8s linear infinite;
+  }
+  @keyframes steamDrift {
+    0% { transform: translateY(6px); opacity: .3; }
+    50% { opacity: 1; }
+    100% { transform: translateY(-14px); opacity: .2; }
+  }
+  .steam { animation: steamDrift 2.6s ease-in-out infinite; }
+  .steam.s2 { animation-delay: .9s; }
+  .steam.s3 { animation-delay: 1.7s; }
+  @media (prefers-reduced-motion: reduce) {
+    .bubble, .steam { animation: none; }
+  }
+
   .gBtn { cursor: pointer; outline: none; }
   .gBtn:hover rect { fill: #eef1f5; }
   .gBtn:focus-visible rect { stroke: #2166d1; stroke-width: 2; }
